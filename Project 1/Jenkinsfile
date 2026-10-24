@@ -1,0 +1,84 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'Maven3'
+    }
+
+    environment {
+        GIT_URL = 'https://github.com/Bikkythecoder/CI-CD-PROJECTS.git'
+        DOCKER_IMAGE = 'bikkybabu/javamavenapp:latest'
+        CONTAINER_NAME = 'javamavenapp_container'
+        APP_PORT = '9000'
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                git branch: 'main', url: "${GIT_URL}"
+            }
+        }
+
+        stage('Build Maven Application') {
+            steps {
+                dir('Project 1') {
+                    sh 'mvn clean package'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                dir('Project 1') {
+                    sh 'docker build -t $DOCKER_IMAGE .'
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'docker-cred',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )
+                ]) {
+                    sh '''
+                        printf '%s' "$DOCKER_PASSWORD" |
+                            docker login --username "$DOCKER_USER" --password-stdin
+                        docker push "$DOCKER_IMAGE"
+                        docker logout
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy Application') {
+            steps {
+                sh '''
+                    docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+                    docker run -d \
+                        --name "$CONTAINER_NAME" \
+                        -p "$APP_PORT":8080 \
+                        "$DOCKER_IMAGE"
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            emailext(
+                to: 'bikky.roy2000@gmail.com',
+                from: 'bikky.roy2000@gmail.com',
+                replyTo: 'bikky.roy2000@gmail.com',
+                subject: "Jenkins Build ${currentBuild.currentResult}: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """Build result: ${currentBuild.currentResult}
+Job: ${env.JOB_NAME}
+Build number: ${env.BUILD_NUMBER}
+Build URL: ${env.BUILD_URL}"""
+            )
+        }
+    }
+}
